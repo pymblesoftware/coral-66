@@ -4,8 +4,8 @@
 
 
 
-coral: main.c lex.yy.c keywords.cc
-	cc -o coral main.c keywords.cc  #lex.yy.c
+coral: main.c lex.yy.c keywords.cc code-gen.c
+	cc -o coral main.c keywords.cc  code-gen.c #lex.yy.c
 
 
 lex.yy.c:
