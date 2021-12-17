@@ -13,6 +13,8 @@ void emit_header( FILE *fp )
 void emit_data( FILE *fp )
 {
     fprintf( fp, ".section	__DATA,__data \n" );
+    
+    
     fprintf( fp, ".globl	_def                            ## @def \n" );
     fprintf( fp, ".p2align	2 \n" );
     fprintf( fp, "_def: \n" );

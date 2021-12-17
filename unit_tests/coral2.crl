@@ -1,0 +1,2070 @@
+'CORAL' TEST RESPONDER
+
+'COMMENT' VERSION 1.1
+
+The official definition of Coral 66 does not provide for the output of
+data at run time. However the facilities provided by the following
+routines are useful within the Test Responder for logging/debugging
+purposes. They can be supplied by the implementor either by adapting
+existing routines or by writing new ones.
+
+The use of these routines is optional. If the implementor does not wish
+to generate such output, he can define these procedures to be null,
+comment them out, or delete each occurrence of them from the code. The
+occurrences within read.command.octet (chart 3) have been commented out,
+because for normal use they produce too much output:- one line per octet
+received. The function of each of the routines is as follows:
+
+
+trwritestring - writes the string supplied as the parameter to the
+                output buffer.
+trwriteint    - converts the integer supplied as the first parameter to
+                its corresponding character representation before
+                writing it to the output buffer right justified in a
+                field of width given by the second parameter.
+trwriteout    - writes the record in the output buffer to the currently
+                selected output stream and resets the buffer;
+
+
+'LIBRARY' ('PROCEDURE' trwritestring('VALUE' 'INTEGER'),
+                       trwriteint('VALUE' 'INTEGER', 'VALUE' 'INTEGER'),
+                       trwriteout
+          )
+
+'COMMENT'
+Acknowledgements:
+   This code was originally written by M. Woodger. It was then updated
+by C.R.V. Reed of AERE Harwell under supervision of D. Rayner.
+Additional contributions to Version 1.1 have been made by the following
+members of the Protocol Standards Group: D.C. Eason, P. Oliver,
+J. R. Pavel, and D. Rayner ;
+'COMMON'
+(
+'INTEGER' 'PROCEDURE' block('VALUE' 'INTEGER');
+'PROCEDURE' initblock('INTEGER' 'ARRAY' , 'VALUE' 'INTEGER');
+'INTEGER' 'PROCEDURE' putch('INTEGER' 'ARRAY');
+'INTEGER' 'PROCEDURE' getch('INTEGER' 'ARRAY');
+'PROCEDURE' copy('INTEGER' 'ARRAY' , 'INTEGER' 'ARRAY');
+'PROCEDURE' copy text('VALUE' 'INTEGER' , 'INTEGER' 'ARRAY');
+'PROCEDURE' store param('INTEGER' 'ARRAY' , 'INTEGER' 'ARRAY');
+'PROCEDURE' fetch param('INTEGER' 'ARRAY' , 'INTEGER' 'ARRAY');
+'PROCEDURE' send connect('INTEGER' 'ARRAY');
+'PROCEDURE' initialise control variables;
+'PROCEDURE' set default mode;
+'INTEGER' 'PROCEDURE' read command octet;
+'PROCEDURE' respond to change mode event;
+'INTEGER' 'PROCEDURE' param count checks with command type;
+'INTEGER' 'PROCEDURE' read parameter;
+'PROCEDURE' respond to command;
+'PROCEDURE' respond to invalid command event;
+'PROCEDURE' do actions('INTEGER' 'ARRAY');
+'PROCEDURE' respond to cles;
+'INTEGER' 'PROCEDURE' test input('LOCATION' 'INTEGER' ,
+                                 'VALUE' 'INTEGER');
+'INTEGER' 'PROCEDURE' drive automatic source;
+'INTEGER' 'PROCEDURE' count and respond to primitive message;
+'INTEGER' 'PROCEDURE'
+                  no of octets checks with command type and param count;
+'INTEGER' 'PROCEDURE' mode parameters check;
+'PROCEDURE' send octet('VALUE' 'INTEGER' , 'VALUE' 'INTEGER');
+'PROCEDURE' process cle count('VALUE' 'INTEGER');
+'PROCEDURE' respond to poc event;
+'PROCEDURE' respond to incoming message;
+'INTEGER' 'PROCEDURE' response parameters check;
+'INTEGER' 'PROCEDURE' cle parameters check;
+'INTEGER' 'PROCEDURE' source parameters check;
+'PROCEDURE' send parameter;
+'PROCEDURE' send and count ns message('VALUE' 'INTEGER' ,
+                                      'VALUE' 'INTEGER');
+'PROCEDURE' send reply('VALUE' 'INTEGER' ,
+                       'VALUE' 'INTEGER' , 'VALUE' 'INTEGER');
+'PROCEDURE' abandon command;
+'PROCEDURE' send and buffer ns message('VALUE' 'INTEGER' ,
+             'VALUE' 'INTEGER' ,'VALUE' 'INTEGER' , 'VALUE' 'INTEGER');
+'PROCEDURE' act2;
+'PROCEDURE' act3;
+'PROCEDURE' act4;
+'PROCEDURE' act5;
+'PROCEDURE' act6;
+'PROCEDURE' act7;
+'PROCEDURE' act8;
+'PROCEDURE' act9;
+'PROCEDURE' act10;
+'PROCEDURE' act11;
+'PROCEDURE' act12;
+'PROCEDURE' act13;
+'PROCEDURE' act14;
+'PROCEDURE' act15;
+'PROCEDURE' act16;
+'PROCEDURE' act17;
+'PROCEDURE' act18;
+'PROCEDURE' act19;
+'PROCEDURE' act20;
+'INTEGER' 'PROCEDURE' input ns('INTEGER' 'ARRAY');
+'PROCEDURE' wait for ns input('INTEGER' 'ARRAY');
+'PROCEDURE' output ns('INTEGER' 'ARRAY' , 'VALUE' 'INTEGER');
+'PROCEDURE' supply initial values('INTEGER' 'ARRAY' , 'INTEGER' 'ARRAY',
+                          'LOCATION' 'INTEGER');
+
+
+'DEFINE' blocksize      "0";
+'DEFINE' getpntr        "1";
+'DEFINE' putpntr        "2";  (For using "blocks")
+'DEFINE' response size  "4";  (Max. no. of parameters)
+'DEFINE' response limit "4";  (Upper array bound)
+
+'DEFINE' true  "1";
+'DEFINE' false "0";  (Boolean values)
+'DEFINE' h "72";
+'DEFINE' t "84";
+'DEFINE' w "87";  (ASCII codes)
+
+'DEFINE' allowed to wait "true";
+'DEFINE' not allowed to wait "false";
+
+'DEFINE' none     "0";
+'DEFINE' warn     "true";
+'DEFINE' no warn  "false";
+'DEFINE' addr     "true";
+'DEFINE' not addr "false";  (Constant parameters)
+
+'DEFINE' connect    "1";
+'DEFINE' accept     "2";
+'DEFINE' disconnect "3";
+'DEFINE' data       "4";
+'DEFINE' address    "5";
+'DEFINE' push       "6";
+'DEFINE' expedited  "7";
+'DEFINE' reset      "8";  (NS primitive message types)
+
+'DEFINE' forward buffered output "99";  (Used by Chart 30 when calling
+                                         Chart 33 to simulate Chart 31)
+
+'COMMENT' Definition of implementation dependent constants, actual
+          values to be supplied by the implementor. Note that with the
+          data structure used, LIMIT = round(0.5*SIZE) + 2
+
+          Note: address size, qs size, expl text size and cr size do
+          not have to allow for an initial length octet, whereas
+          comd size, data size, expedited size and buf size do need to
+          allow for appropriate type and length octets;
+
+'DEFINE' address size    "?";  (Maximum length of an address - TDRP
+                                  requires it to be < 256)
+'DEFINE' address limit   "?";  (Array bound for block for
+                                  address)
+'DEFINE' comd size       "?";  (Maximum TDRP command or reply will be
+                                maximum of:
+                                    i/ 168
+                                   ii/ expl text size + qs size + 2
+                                  iii/ expl text size + cr size  + 2
+                                   iv/ address size + 3)
+'DEFINE' comd limit      "?";  (Array bound for block for
+                                  command or reply buffer)
+'DEFINE' qs size         "?";  (Maximum length of QoS parameter)
+
+'DEFINE' qs limit        "?";  (Array bound for block for Quality
+                                  of Service parameter)
+'DEFINE' expl text size  "?";  (Maximum length of expl. text parameter)
+
+'DEFINE' expl text limit "?";  (Array bound for block for explanatory
+                                  text)
+'DEFINE' nsidu limit     "?";  (Array bound for block for Nsidu_out
+                                  should = round 0.5*data[size]+2)
+'DEFINE' cr size         "?";  (Maximum length of coded reason
+                                  parameter, in octets, in case it is
+                                  longer than the maximum integer size)
+'DEFINE' cr limit        "?";  (Array bound for coded reason)
+
+'DEFINE' data size       "?";  (Maximum for an NSIDU of DATA or
+                                  EXPEDITED, plus type & length octets)
+'DEFINE' expedited size  "?";  (Maximum for an NSIDU of EXPEDITED,
+                                  plus type & length octets)
+'DEFINE' buf size        "?";  (Block size. Must accommodate largest
+                                  NSIDU, and largest message
+                                  CONNECT: 5 + expl text size +
+                                  2 * address size + qs size)
+'DEFINE' buf limit       "?";  (Array bound for blocks
+                                  for input and output buffers)
+
+'INTEGER' ch;  (Used in manipulating octets in blocks)
+'INTEGER' default mode connect in ;
+;(Set within Supply Initial Values-Chart 203, by the implementor)
+'INTEGER' octin, octout;
+'INTEGER' type, message type;  (Type goes from 1 to 8,
+                              message type from 1 to 25 and 29 to 53)
+'INTEGER' command type, param count,
+        cle count, context,
+        d command, e command,
+        d suspense, e suspense,
+        heldin, heldout,
+        abandon, invalid, poc,
+        last in was data, last out was data,
+        resets sent,
+        reply stream,
+        auto stream, ss stream,
+        auto on, auto channel free,
+        as oct, ss oct;
+'INTEGER' qualifier;
+'INTEGER' cle id, cle limit,
+        as stream, as first, as last, as inc,
+        ss first, ss last, ss inc, ss burst;
+        ;(Mode parameters 15 to 24.
+         NB:  Only cle limit and ss burst have more than 8 bits)
+'INTEGER' c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c16,
+        c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,
+        c31,c32,c33,c34,c35,c36,c37,c38,c39,c40,c41,c42,c43,c44,
+        c45,c46,c47,c48,c49,c50,c51,c52,c53,c54,c55,c56;(Message counts)
+'COMMENT' Total number of 'INTEGER's is 96 ;
+
+'INTEGER' 'ARRAY' in buf, out buf [0:buf limit];
+'INTEGER' 'ARRAY' nsidu out [0:nsidu limit];
+'INTEGER' 'ARRAY' comd, reply [0:comd limit];
+'INTEGER' 'ARRAY' m1,m2,m3,m4,m5,m6,m7,m8,m9,m10,m11,m12,m13,m14
+                                                   [0:response limit];
+              ;(Blocks for Response parameters)
+'INTEGER' 'ARRAY' ocr1,ocr2,ocr3,icr [0:cr limit];
+              ;(Blocks for Coded Reasons)
+'INTEGER' 'ARRAY' oet1,oet2,oet3,oet4,iet1,iet2  0:expl[text limit];
+              ;(Explanatory texts)
+'INTEGER' 'ARRAY' adrin, oad1,oad2,oad3,oad4, iad1,iad2,iad3,iad4
+              [0:address limit]; (Addresses and Locations)
+'INTEGER' 'ARRAY' oqs, iqs [0:qs limit];
+              ;(Quality of Service)
+
+'COMMENT' The following are the look-up tables for Incoming Message
+Type, Incoming New Context, Outgoing Message Type and Outgoing
+New Context, in terms of the two arguments Context and Type;
+'INTEGER' 'ARRAY' inmt, incon, outmt, outcon [0:10, 1:8]:=
+              (19, 20,  3, 21, 22, 23, 24, 25),
+              ( 1, 12, 13, 14, 15, 16, 17, 18),
+              (11,  2,  4, 14, 15, 16, 17, 18),
+              (11, 12,  3,  5,  6,  7,  8, 18),
+              (11, 12,  3,  5,  6,  7,  8,  9),
+              (11, 12,  3, 21, 22, 23, 24, 10),
+              (11, 12,  3, 14, 15, 16, 17, 18),
+              (11, 12,  4, 21, 22, 23, 24, 25),
+              (11, 12, 13, 14, 15, 16, 17, 18),
+              (11,  2,  4, 14, 15, 16, 17, 18),
+              (11, 12, 13, 14, 15, 16, 17, 18),
+              ( 0,  0,  8,  0,  0,  0,  0,  0),
+              ( 3,  1,  1,  1,  1,  1,  1,  1),
+              ( 0,  4,  1,  0,  0,  0,  0,  0),
+              ( 0,  0, 10,  3,  3,  3,  3,  0),
+              ( 0,  0,  8,  4,  4,  4,  4,  6),
+              ( 0,  0,  8,  5,  5,  5,  5,  5),
+              ( 0,  0,  8,  0,  0,  0,  0,  0),
+              ( 7,  7,  1,  7,  7,  7,  7,  7),
+              ( 8,  8,  8,  8,  8,  8,  8,  8),
+              ( 9,  7,  1,  9,  9,  9,  9,  9),
+              (10, 10, 10, 10, 10, 10, 10, 10),
+              (47, 48, 31, 49, 50, 51, 52, 53),
+              (29, 40, 41, 42, 43, 44, 45, 46),
+              (39, 40, 31, 33, 34, 35, 36, 46),
+              (39, 30, 32, 42, 43, 44, 45, 46),
+              (39, 40, 31, 33, 34, 35, 36, 37),
+              (39, 40, 31, 33, 34, 35, 36, 37),
+              (39, 40, 31, 49, 50, 51, 52, 38),
+              (39, 40, 41, 42, 43, 44, 45, 46),
+              (39, 40, 32, 49, 50, 51, 52, 53),
+              (39, 40, 41, 42, 43, 44, 45, 46),
+              (39, 30, 32, 42, 43, 44, 45, 46),
+              ( 0,  0,  7,  0,  0,  0,  0,  0),
+              ( 2,  1,  1,  1,  1,  1,  1,  1),
+              ( 0,  0,  9,  2,  2,  2,  2,  0),
+              ( 0,  4,  1,  0,  0,  0,  0,  0),
+              ( 0,  0,  7,  4,  4,  4,  4,  5),
+              ( 0,  0,  7,  5,  5,  5,  5,  5),
+              ( 0,  0,  7,  6,  6,  6,  6,  4),
+              ( 7,  7,  7,  7,  7,  7,  7,  7),
+              ( 8,  8,  1,  8,  8,  8,  8,  8),
+              ( 9,  9,  9,  9,  9,  9,  9,  9),
+              (10,  8,  1, 10, 10, 10, 10, 10);
+)
+'COMMENT' end of common declarations ;
+
+'SEGMENT' c1
+'BEGIN'
+
+'COMMENT' Octet handling and Blocks.
+     The routines initblock, getch, putch, the global ch and the macros
+     getpntr and putpntr provide a mechanism for serially appending a
+     sequence of octets into a Coral 66 array and reading them out
+     again. This is called a "block".
+
+     If b names the array, and it is to hold at most n octets, then
+     initblock( b, n ) prepares the array b to act in this way as a
+     block. It establishes the size of the block in the zeroth element
+     of the array, and initializes to zero (in elements 1 and 2) two
+     pointers used to keep track of the reading and writing. The get
+     pointer indicates the next octet to be read out of the block, and
+     put pointer indicates the next free space after the last octet
+     inserted.
+
+     It is helpful to remember that normally the value of the put
+     pointer is the number of octets in the block, while the value of
+     the get pointer is the number of octets that have been read from
+     it.
+
+     A call of the function putch(b) stores a copy of the octet held in
+     ch into the block and adds one to the put pointer. As a function it
+     normally returns the value true (=1), but if the block is full the
+     value false (=0) is returned and no storing occurs.
+
+     A call of getch(b) normally copies to ch the octet pointed to by
+     the get pointer of b, adds 1 to get pointer, and returns the value
+     true. If however the get pointer is equal to or greater than the
+     put pointer (meaning all characters have been read), the value
+     false is returned instead.
+
+     To start another read out, the get pointer can be reset by the
+     assignment b[getpntr]:= 0.
+
+     The general strategy is to initialise all blocks once, at the start
+     of the program, to reset the put pointer just before filling a
+     block, and to reset the get pointer just after each read out from
+     it, unless it will only be read once (the common case) ;
+
+'INTEGER' 'PROCEDURE' block ('VALUE' 'INTEGER' string loc);
+'COMMENT'  The actual parameter must be the location of (i.e. the
+   value of) a string (and may therefore actually be a string)
+   of the form   "TEXT=...."   where the dots represent zero or
+   more characters.
+   The string is converted into a block containing these
+   characters (or is unaltered if it is already a block),
+   and the answer is  string loc.
+   It is assumed that strings are stored two octets per word and
+   start with a length octet (zero for a null string).
+   The length octet and the five characters  TEXT=  are overwritten
+   by the blocksize, getpntr and putpntr;
+'BEGIN'
+   'INTEGER' octet1;
+   octet1 :='BITS'[8,8] string[loc];
+   'IF' octet1 > 0 'THEN'
+       string[loc]:= octet1 - 5;  (If we already have a block, then
+                                    octet1 is 0, otherwise reduce
+                                    blocksize by 5 for TEXT=)
+    string loc +[1]:= 0;  (getpntr)
+    string loc +[2]:= [string loc];  (putpntr = blocksize)
+   'ANSWER' string loc
+'END';
+
+
+'PROCEDURE' initblock ('INTEGER' 'ARRAY' a, 'VALUE' 'INTEGER' l);
+'COMMENT' Initialises the block a so that it can hold l characters.
+Assumes that the index of the array a can vary from 0 to lim,
+so that  l = 2(lim-2)  characters can be held;
+'BEGIN'
+   a[blocksize]:= l;
+   a[getpntr]:= 0;
+   a[putpntr]:=0
+'END';
+
+'INTEGER' 'PROCEDURE' putch ('INTEGER' 'ARRAY' b);
+'COMMENT' Appends to block b the character given in  ch;
+'BEGIN'
+   'INTEGER' p;
+   p :=[b putpntr];
+   'IF' p >= b[blocksize]'THEN' 'ANSWER' false
+   'ELSE'
+   'BEGIN'
+      'IF'  p 'MASK' 1 = 0
+      'THEN'  'BITS'[8,8]b ['BITS'[15,1]'INTEGER'(p+6)] := ch
+      'ELSE'  'BITS'[8,0]b ['BITS'[15,1]'INTEGER'(p+6)] := ch;
+
+      b[putpntr]:= p+1;
+      'ANSWER' true
+   'END'
+'END';
+
+'INTEGER' 'PROCEDURE' getch ('INTEGER' 'ARRAY' b);
+'COMMENT' Fetches to ch the character given by  b[getpntr], and
+increments the getpntr;
+'BEGIN'
+   'INTEGER' g;
+   g :=[b getpntr];
+   'IF' g >= b[putpntr]'THEN' 'ANSWER' false
+   'ELSE'
+   'BEGIN'
+      ch := 'IF'  g 'MASK' 1 = 0
+         'THEN'  'BITS'[8,8]b ['BITS'[15,1]'INTEGER'(g+6)]
+         'ELSE'  'BITS'[8,0]b ['BITS'[15,1]'INTEGER'(g+6)];
+      b[getpntr]:= g+1;
+      'ANSWER' true
+   'END'
+'END';
+
+
+'PROCEDURE' copy ('INTEGER' 'ARRAY' a,b);
+'COMMENT' Appends block a to block b (losing excess characters if
+b is too small).  Restores getpntr of a to its value on entry;
+'BEGIN'
+   'INTEGER' dummy, g;
+   g :=[a getpntr];
+   a[getpntr]:= 0;
+   'FOR' dummy := 0 'WHILE' getch(a) = true 'DO' putch(b);
+   a[getpntr]:= g
+'END';
+
+
+'PROCEDURE' copy text ('VALUE' 'INTEGER' a, 'INTEGER' 'ARRAY' b);
+'COMMENT' Assumes a is the value delivered by a call of block,
+i.e.  is the location of a block.  Appends this block to block b
+;(losing excess characters if b is too small);
+'BEGIN'
+   'INTEGER' dummy, g;
+   'INTEGER' 'PROCEDURE' get('VALUE' 'INTEGER' a,
+                             'LOCATION' 'INTEGER' g);
+   'COMMENT' Fetches to ch the character of the block located by a
+   whose getpntr value is g, and increments g;
+   'BEGIN'
+      'IF' g>= [a+putpntr]'THEN' 'ANSWER' false
+      'ELSE'
+      'BEGIN'
+         ch := 'IF' g 'MASK' 1 = 0
+               'THEN' 'BITS' [8,8][a+'BITS'[15,1]'INTEGER'(g+6)]
+               'ELSE' 'BITS' [8,0][a+'BITS'[15,1]'INTEGER'(g+6)];
+         g := g+1;
+         'ANSWER' true
+      'END'
+   'END';
+   g := 0;
+   'FOR' dummy := 0 'WHILE' get(a,g)=true 'DO' putch(b)
+'END';
+
+'PROCEDURE' store param ('INTEGER' 'ARRAY' a,b);
+'COMMENT' Assumes the getpntr of a accesses the length octet of
+a parameter.  Replaces the contents of the block b by this
+parameter, leaving the getpoiner of a past it.  If b is too small
+the excess is wasted;
+'BEGIN'
+   'INTEGER' count;
+   b[putpntr]:= 0;
+   b[getpntr]:= 0;
+   getch(a);  count := ch;  (Length octet)
+   'FOR' count := count-1 'WHILE' count >= 0 'DO'
+   'BEGIN'
+      getch(a);  putch(b)
+   'END';
+'END';
+
+
+'PROCEDURE' fetch param ('INTEGER' 'ARRAY' a,b);
+'COMMENT' Appends to block b, firstly the putpntr of block a
+;(which will be the length octet), then the contents of a.  The
+getpntr of a must initially be zero (and will be left zero);
+'BEGIN'
+   ch :=[a putpntr];  putch(b);  (Length octet)
+   copy(a,b)
+'END';
+
+
+'PROCEDURE' send connect ('INTEGER' 'ARRAY' called address);
+'COMMENT' Sends a CONNECT primitive with the given called address and
+other parameters according to stored values ;
+'BEGIN'
+   out buf[putpntr]:= 0;
+   ch := connect;  putch(out buf);  (Type octet)
+   fetch param(called address, out buf);
+   fetch param(oad2, out buf);
+   fetch param(oqs, out buf);
+   fetch param(oet4, out buf);
+   send and count ns message(connect, none) ; (29)
+'END';
+
+'PROCEDURE' initialise control variables;
+'COMMENT' Chart 1.  Also initialises all blocks, constants are defined
+                    in the common block above ;
+'BEGIN'
+   heldin := none;  heldout := none;
+      ;(Buffers empty)
+   context := 1;  (No establshed connection)
+   cle count := 0;  (Empty queue of Count Limit Events)
+   d command := false;  (No command yet on DATA stream)
+   e command := false;  (No command yet on EXPEDITED stream)
+   last in  was data := false;
+   last out was data := false;
+   poc := false;
+   invalid := false;
+   resets sent := 0;
+   initblock(in buf, buf size);  initblock(out buf, buf size);
+   initblock(nsidu out, data size);
+   initblock(comd, comd size);  initblock(reply, comd size);
+   initblock(m1,  response limit); (Allows Response parameters of up to
+                                    'response limit' primitive actions)
+   initblock(m2,  response size);
+   initblock(m3,  response size);
+   initblock(m4,  response size);
+   initblock(m5,  response size);
+   initblock(m6,  response size);
+   initblock(m7,  response size);
+   initblock(m8,  response size);
+   initblock(m9,  response size);
+   initblock(m10, response size);
+   initblock(m11, response size);
+   initblock(m12, response size);
+   initblock(m13, response size);
+   initblock(m14, response size);
+   initblock(ocr1, cr size); (Protocol encoding permits indefinite)
+   initblock(ocr2, cr size); (length coded reasons)
+   initblock(ocr3, cr size);
+   initblock(icr, cr size) ;
+   initblock(oet1, expl text size);
+   initblock(oet2, expl text size);
+   initblock(oet3, expl text size);
+   initblock(oet4, expl text size);
+   initblock(iet1, expl text size);
+   initblock(iet2, expl text size);
+   initblock(adrin,address size);
+   initblock(oad1, address size);
+   initblock(oad2, address size);
+   initblock(oad3, address size);
+   initblock(oad4, address size);
+   initblock(iad1, address size);
+   initblock(iad2, address size);
+   initblock(iad3, address size);
+   initblock(iad4, address size);
+   initblock(oqs, qs size);
+   initblock(iqs, qs size)
+'END';
+
+'PROCEDURE' set default mode;
+'COMMENT' Chart 2;
+'BEGIN'
+   'INTEGER' n;
+   'FOR' n := 0 'STEP' 1 'UNTIL' 55 'DO'
+       'LOCATION'(c1) +[n]:= 0;  (Clear message counts)
+   ch := 64;  putch(ocr1);
+      ;(Outgoing Coded Reason for normal use with
+       RESET or DISCONNECT, local use)
+   ch := 255;  putch(ocr2);
+      ;(Ditto after an invalid command)
+   ch := 254;  putch(ocr3);
+      ;(Ditto after a Primitive Out of Context)
+   copytext(block("TEXT=INVALID COMMAND"), oet2);
+      ;(Outgoing Explanatory Text after an invalid command)
+   copytext(block("TEXT=PRIMITIVE OUT OF CONTEXT"), oet3);
+      ;(Ditto after POC)
+   copytext(block("TEXT=TEST RESPONDER VERSION 1.1"), oet4);
+      ;(For use with CONNECT or ACCEPT)
+
+   supply initial values(oad1, oad2, default mode connect in); (203)
+      ;(Outgoing Called  Address for use with CONNECT,
+       Outgoing Calling Address for use with CONNECT and
+       Default mode connect in = true or false.
+       Implementation dependent)
+
+   copy(oad2, oad3);
+         ;(Outgoing recall address set to outgoing calling address)
+
+  'COMMENT' The explanatory texts oet1,iet1,iet2, the addresses
+  iad1,iad2,iad3,iad4 and oad4, the Quality of Service values in
+  oqs,iqs, and the Coded Reason in icr are now null, since these blocks
+  are empty;
+
+   cle id := 0;  cle limit := 0;  (No Count Limit)
+   as stream := 0;  as first := 0;  as last := 0;  as inc := 0;
+   ss first := 0;  ss last := 0;  ss inc := 0;  ss burst := 0;
+      ;(No data sources)
+   ch := 1;  (Primitive Action:  do nothing)
+   putch(m2); putch(m5);
+   putch(m6); putch(m7); putch(m8); putch(m10);
+   putch(m11); putch(m12);  (Response parameters:  do nothing,
+                             m2 or m11 will be overwritten below)
+
+   ch := 6;  putch(m3);
+   ch := 20; putch(m3);
+      ;(Response to Initial DISCONNECT:
+         Final DISCONNECT and End Test Session)
+   ch := 20; putch(m4);
+      ;(Response to Final DISCONNECT:  End Test Session)
+   ch := 6;  putch(m9);  putch(m13);  putch(m14);
+      ;(Responses to Initial RESET, Invalid Command or
+       Primitive Out of Context:
+         Initial DISCONNECT)
+
+   'IF' default mode connect in = true 'THEN'
+   'BEGIN'
+      ch := 5;  putch(m1);  (Response to CONNECT:  ACCEPT)
+      ch := 6;  putch(m2);  (Response to ACCEPT:  Initial DISCONNECT)
+   'END'
+   'ELSE'
+   'BEGIN'
+      ch := 2;  putch(m11);  (Response to start:  CONNECT)
+      ch := 6;  putch(m1);
+      ch := 20; putch(m1);
+         ;(Response to CONNECT:  Final DISCONNECT, End Test Session)
+   'END'
+'END';
+
+'INTEGER' 'PROCEDURE' read command octet;
+'COMMENT' Chart 3;
+'BEGIN'
+   'INTEGER' 'PROCEDURE' process primitive gives command octet;
+   'BEGIN'; 'COMMENT' This procedure is used by read_command_octet
+                  to find TDRP commands.It incorporates charts 15 & 16 ;
+
+      'IF' count and respond to primitive message = true 'THEN'
+      'BEGIN'; (14. Normal DATA or EXPEDITED message,
+                          not yet responded to)
+         'IF' type = data 'THEN'
+         'BEGIN';  (DATA message, dealt with by chart 15)
+            'COMMENT' The following 'write' statements can be used to
+                    display the received data octet values if required
+            trwritestring
+        ;("TR - process primitive gives command octet - (Data) octin =")
+            trwriteint(octin, 6)
+            trwriteout                 end of commented out 'writes';
+            'IF' d command = true 'THEN'
+            'BEGIN';  (Command octet)
+               respond to cles;  (11)
+               'ANSWER' true
+            'END';
+            'IF' d suspense = true 'THEN'
+            'BEGIN'
+               d suspense := false;          (ordinary data)
+               respond to incoming message;  (24)
+            'END'
+            'ELSE'
+            'IF' octin = h 'THEN'
+            'BEGIN';  (D herald)
+               'IF' e command = true 'THEN'
+                  'BEGIN' respond to invalid command event; (8) 'END'
+               'ELSE'
+                  d command := true
+            'END'
+            'ELSE'
+            'IF' octin = w 'THEN'
+               d suspense := true
+            'ELSE'
+            'BEGIN' respond to incoming message;(24 -ordinary data)'END'
+         'END'
+         'ELSE'
+          'BEGIN';  (EXPEDITED message, dealt with by chart 16)
+            'COMMENT' The following 'write' statements can be used to
+                   display the received expedited octet if required
+            trwritestring
+        ;("TR - process primitive gives command octet - (Exp.) octin =")
+            trwriteint(octin, 6)
+            trwriteout                 end of commented out 'writes';
+            'IF' e command = true 'THEN'
+            'BEGIN';  (Command octet)
+               respond to cles;
+               'ANSWER' true
+            'END';
+
+            'IF' e suspense = true 'THEN'
+            'BEGIN'
+               e suspense := false;          (ordinary expedited)
+               'BEGIN' respond to incoming message;  (24) 'END'
+            'END'
+            'ELSE'
+            'IF' octin = h 'THEN'
+            'BEGIN';  (E herald)
+               'IF' d command = true 'THEN'
+                  'BEGIN' respond to invalid command event;  (8) 'END'
+               'ELSE'
+                  e command := true
+            'END'
+            'ELSE'
+            'IF' octin = w 'THEN'
+               e suspense := true
+            'ELSE'
+               'BEGIN'
+                   respond to incoming message; (24 ordinary expedited)
+               'END'
+         'END';  (EXPEDITED)
+      'END';  (Use of Octin)
+      'ANSWER' false
+   'END' process primitive gives command octet;
+
+   'INTEGER' dummy;
+
+   d suspense := false;  e suspense := false;
+   abandon := false;
+
+   'FOR' dummy := 0 'WHILE' 0=0 'DO'
+   'BEGIN';  (Loop repeated indefinitely)
+      'IF' abandon = true 'THEN' 'ANSWER' false;
+
+      'IF' test input(type, not allowed to wait) = false 'THEN'
+      'BEGIN';
+         'IF' drive automatic source = false 'THEN'
+         'BEGIN'
+            test input(type, allowed to wait) ;  (12)
+            'IF' process primitive gives command octet = true 'THEN'
+               'ANSWER' true
+         'END';
+         'COMMENT' Else Source was driven so respond to cles and loop;
+      'END'
+      'ELSE'
+      'BEGIN'
+         'IF' process primitive gives command octet = true 'THEN'
+            'ANSWER' true
+      'END';
+      'COMMENT' initblock(in buf, buf size) is unnecessary because
+                test input overwrites whatever is in 'in buf';
+      respond to cles
+   'END';  (Loop)
+'END';  (Read command octet)
+
+'PROCEDURE' respond to change mode event;
+'COMMENT' Chart  4;
+'BEGIN'
+   auto on := false;   (Initialise Sources- chart 9)
+
+   'IF' as stream <> 0 'THEN'
+   'BEGIN'
+      as oct := aslast ; ( asoct is set so that it becomes asfirst
+                        instead of being incremented before it is sent )
+      ss oct := sslast ;
+                         ;(Ditto for ss oct)
+
+      'IF' as stream = 1 'THEN'
+      'BEGIN'
+         auto stream := data;
+         ss stream   := expedited;
+      'END'
+      'ELSE'
+      'BEGIN'
+         auto stream := expedited;
+         ss stream   := data;
+      'END';
+   'END';
+
+   do actions(m11);        (10)
+   respond to cles;        (11)
+'END';
+
+'INTEGER' 'PROCEDURE' param count checks with command type;
+'COMMENT'  Chart 5;
+'BEGIN'
+   'INTEGER' 'ARRAY' params for command [1:19]:= 24, 0, 2, 2, 1, 1, 1,
+                                                   1, 0, 0, 1, 1, 1, 1,
+                                                   2, 2, 2, 2, 0;
+
+   'IF' param count = params for command command[type]
+   'THEN' 'ANSWER' true
+   'ELSE' 'ANSWER' false;
+'END';
+
+'INTEGER' 'PROCEDURE' read parameter;
+'COMMENT'  Chart 6;
+'BEGIN'
+   'INTEGER' count;
+   'IF' read command octet = false 'THEN'
+      'ANSWER' false;  (Command abandoned)
+
+   'IF' no of octets checks with command type and param count
+      = false 'THEN'
+   'BEGIN'
+      respond to invalid command event;
+      'ANSWER' false
+   'END';
+
+   count := octin;  (Number of octets in parameter)
+   ch := count;  putch(comd);  (Store length octet)
+
+   'FOR' count := count - 1 'WHILE' count >= 0 'DO'
+   'BEGIN'
+      'IF' read command octet = false 'THEN'
+         'ANSWER' false;  (Command abandoned)
+      ch := octin;  putch(comd);  (Store octet)
+   'END';
+   'ANSWER' true
+'END';
+
+'PROCEDURE' respond to command;
+'COMMENT'  Chart 7;
+'BEGIN'
+   'INTEGER' count;
+'COMMENT'  Note: not addr is a constant = false, and addr = true.
+
+         The following five procedures are declared here because
+         they are not used elsewhere;
+
+   'PROCEDURE' store one ('LOCATION' 'INTEGER' x);
+   'COMMENT' Checks parameter length 1 in block comd, then copies to x;
+   'BEGIN'
+      getch(comd);
+      'IF' ch <> 1 'THEN' 'GOTO' parameter error;  (Wrong length)
+      getch(comd);  x := ch
+   'END';
+
+   'PROCEDURE' store two ('LOCATION' 'INTEGER' x);
+   'COMMENT' Checks parameter length 2 in block comd, then copies to x;
+   'BEGIN'
+      'INTEGER' first;
+      getch(comd);
+      'IF' ch <> 2 'THEN' 'GOTO' parameter error;  (Wrong length)
+      getch(comd);  first := ch;
+      getch(comd);
+      x := 256*first + ch
+   'END';
+
+   'PROCEDURE' fetch one ('VALUE' 'INTEGER' x);
+   'COMMENT'  Appends x to block reply, preceded by length octet 1;
+   'BEGIN'
+      ch := 1;  putch(reply);
+      ch := x;  putch(reply)
+   'END';
+
+   'PROCEDURE' fetch two ('VALUE' 'INTEGER' x);
+   'COMMENT'  Appends top and bottom octets of x to block reply,
+      preceded by length octet 2;
+   'BEGIN'
+      ch := 2;  putch(reply);
+      ch :='BITS'[8,8]x;  putch(reply);
+      ch :='BITS'[8,0]x;  putch(reply)
+   'END';
+
+   'PROCEDURE' send addr( 'INTEGER' 'ARRAY' a,
+                        'VALUE' 'INTEGER' qual, comtyp, repeat mode);
+   'COMMENT' Puts into reply an array parameter from block 'a' and a
+      qualifier parameter of value qual, and sends reply with reply
+      type comtyp.  Repeat mode is set to addr (= true) if the address
+      is to be repeated in an ADDRESS primitive, otherwise it is set to
+      not addr (= false);
+   'BEGIN'
+      fetch param(a, reply);
+      ch := 1;  putch(reply);  (Length octet for qualifier)
+      ch := qual;  putch(reply);  (Qualifier)
+      send reply(repeat mode, comtyp, 2); (30)
+   'END';
+
+'COMMENT'  Here begin the statements of  Respond_to_command;
+
+   'IF' command type = 1 'THEN'
+   'BEGIN';  (Change Mode)
+      'IF' mode parameters check = false 'THEN'
+      'BEGIN'
+         'GOTO' parameter error;  (To respond to invalid command event)
+      'END'
+      'ELSE'
+      'BEGIN'
+         store param(comd, m1);  (Response parameters)
+         store param(comd, m2);
+         store param(comd, m3);
+         store param(comd, m4);
+         store param(comd, m5);
+         store param(comd, m6);
+         store param(comd, m7);
+         store param(comd, m8);
+         store param(comd, m9);
+         store param(comd, m10);
+         store param(comd, m11);
+         store param(comd, m12);
+         store param(comd, m13);
+         store param(comd, m14);
+         store one(cle id);           (mode param 15)
+         store two(cle limit);        (  "    "   16)
+         store one(as stream);        (  "    "   17)
+         store one(as first);         (  "    "   18)
+         store one(as last);          (  "    "   19)
+         store one(as inc);           (  "    "   20)
+         store one(ss first);         (  "    "   21)
+         store one(ss last);          (  "    "   22)
+         store one(ss inc);           (  "    "   23)
+         store two(ss burst);         (  "    "   24)
+         'IF' auto on = true 'THEN'
+         'BEGIN'
+            act 13;  (Stop automatic source)
+            respond to cles; (11)
+         'END';
+         respond to change mode event;  (4)
+      'END'
+   'END'
+   'ELSE'
+   'IF' command type = 10 'THEN'
+      'BEGIN' act 15;  (Generate a parallel Test Responder,
+                        with CONNECT out default mode)
+      'END'
+   'ELSE'
+   'IF' command type = 2 'THEN'
+   'BEGIN'
+      'FOR' count := 0 'STEP' 1 'UNTIL' 55 'DO'
+       'LOCATION'(c1) +[count]:= 0;  (Reset message counts)
+   'END'
+   'ELSE'
+
+   'IF' command type = 9 'THEN'
+   'BEGIN'
+      act 12;           (Start Automatic Source)
+      respond to cles;   (11)
+   'END'
+   'ELSE'
+   'IF' command type = 19 'THEN'
+   'BEGIN'
+      act 13;  (Stop Automatic Source)
+      respond to cles;  (11)
+   'END'
+   'ELSE'
+   'IF' command type = 3 'THEN'
+   'BEGIN';  (Set Outgoing Coded Reason and Explanatory Text)
+      store param(comd, ocr1);  (Coded Reason)
+      store param(comd, oet1);  (Explanatory Text)
+   'END'
+   'ELSE'
+   'IF' command type = 4 'THEN'
+   'BEGIN';  (Set Outgoing Quality of Service and Explanatory Text)
+      store param(comd, oqs);   (Quality of Service)
+      store param(comd, oet4);  (Explanatory Text)
+   'END'
+   'ELSE'
+   'IF' command type = 5 'THEN'
+   'BEGIN';  (Set Outgoing Called Address, for use with CONNECT)
+      store param(comd, oad1)
+   'END'
+   'ELSE'
+   'IF' command type = 6 'THEN'
+   'BEGIN';  (Set Outgoing Calling Address, for use with CONNECT)
+      store param(comd, oad2)
+   'END'
+   'ELSE'
+   'IF' command type = 7 'THEN'
+   'BEGIN';  (Set Outgoing Recall Address, for use with ACCEPT)
+      store param(comd, oad3)
+   'END'
+   'ELSE'
+   'IF' command type = 8 'THEN'
+   'BEGIN';  (Set Outgoing Location, for use with RESET and DISCONNECT)
+      store param(comd, oad4)
+   'END'
+   'ELSE'
+   'BEGIN';  (Command type one of 11 to 18)
+      reply[putpntr]:= 0;  (Prepare to form Reply)
+
+      getch(comd);  count := ch;  (Length octet)
+      getch(comd);
+
+      'IF' count = 1 'AND' ch = 1 'THEN'
+         reply stream := data
+      'ELSE'
+      'IF' count = 1 'AND' ch = 2 'THEN'
+         reply stream := expedited
+      'ELSE'
+      'GOTO' parameter error;  (Reply stream error)
+
+      'IF' command type = 11 'THEN'
+      'BEGIN';  (Give Mode Parameters:
+                 Copy parameters,  from m1 to ss_burst,  into reply)
+
+         fetch param(m1, reply);  (response parameters)
+         fetch param(m2, reply);
+         fetch param(m3, reply);
+         fetch param(m4, reply);
+         fetch param(m5, reply);
+         fetch param(m6, reply);
+         fetch param(m7, reply);
+         fetch param(m8, reply);
+         fetch param(m9, reply);
+         fetch param(m10, reply);
+         fetch param(m11, reply);
+         fetch param(m12, reply);
+         fetch param(m13, reply);
+         fetch param(m14, reply);
+         fetch one(cle id);
+         fetch two(cle limit);
+         fetch one(as stream);
+         fetch one(as first);
+         fetch one(as last);
+         fetch one(as inc);
+         fetch one(ss first);
+         fetch one(ss last);
+         fetch one(ss inc);
+         fetch two(ss burst);
+         send reply(not addr, 11, 24);  (30)
+      'END'
+      'ELSE'
+      'IF' command type = 12 'THEN'
+      'BEGIN';  (Give Message Counts)
+         'FOR' count := 0 'STEP' 1 'UNTIL' 55 'DO'
+            fetch two( 'LOCATION'(c1) +[count]) ;
+
+         send reply(not addr, 12, 56); (30)
+      'END'
+      'ELSE'
+      'IF' command type = 13 'THEN'
+      'BEGIN';  (Give Incoming Coded Reason and Explanatory Text)
+         fetch param(icr, reply);
+         fetch param(iet1, reply);
+         send reply(not addr, 13, 2)
+      'END'
+      'ELSE'
+      'IF' command type = 14 'THEN'
+      'BEGIN';  (Give Quality of Service and Explanatory Text)
+         fetch param(iqs, reply);
+         fetch param(iet2, reply);
+         send reply(not addr, 14, 2)
+      'END'
+      'ELSE'
+
+      'BEGIN'
+         'INTEGER' ifrepeat;  (Command type = 15 to 18, give specified
+                        address, repeat as ADDRESS if second param = 1)
+         getch(comd);  count := ch;  (Length octet of second parameter)
+         getch(comd);
+
+         'IF' count = 1 'AND' ch = 0 'THEN'
+            ifrepeat := not addr
+         'ELSE'
+         'IF' count = 1 'AND' ch = 1 'THEN'
+            ifrepeat := addr
+         'ELSE'
+         'GOTO' parameter error;   (Invalid parameter length or value)
+
+         'IF' command type = 15 'THEN'
+            'BEGIN'; (Give Called Address)
+                send addr(iad1, 1, 15, ifrepeat);
+            'END'
+         'ELSE'
+         'IF' command type = 16 'THEN'
+            'BEGIN'; (Give Calling Address)
+                send addr(iad2, 0, 16, ifrepeat);
+            'END'
+         'ELSE'
+         'IF' command type = 17 'THEN'
+            'BEGIN'; (Give Recall Address)
+                send addr(iad3, 0, 17, ifrepeat);
+            'END'
+         'ELSE'
+            'BEGIN'; (Command type = 18: Give Location)
+               send addr(iad4, 0, 18, ifrepeat)
+            'END'
+      'END';
+
+      respond to cles;  (11)
+   'END';
+
+   'GOTO' return;         (Skip round error section)
+
+parameter error:
+                  respond to invalid command event;  (8)
+return:
+'END';  (Respond to command)
+
+'PROCEDURE' respond to invalid command event;
+'COMMENT'  Chart 8;
+'BEGIN'
+   invalid := true;
+   do actions(m13);  (10)
+   invalid := false;
+   respond to cles;  (11)
+'END';
+
+'COMMENT'  Chart 9 - has been absorbed in 4;
+
+'PROCEDURE' do actions ('INTEGER' 'ARRAY' m);
+'COMMENT'  Chart 10;
+'BEGIN'
+   'INTEGER' dummy;
+   'PROCEDURE' do act ('VALUE' 'INTEGER' i);
+   'IF' i = 2 'THEN' act 2 'ELSE'
+   'IF' i = 3 'THEN' act 3 'ELSE'
+   'IF' i = 4 'THEN' act 4 'ELSE'
+   'IF' i = 5 'THEN' act 5 'ELSE'
+   'IF' i = 6 'THEN' act 6 'ELSE'
+   'IF' i = 7 'THEN' act 7 'ELSE'
+   'IF' i = 8 'THEN' act 8 'ELSE'
+   'IF' i = 9 'THEN' act 9 'ELSE'
+   'IF' i = 10 'THEN' act 10 'ELSE'
+   'IF' i = 11 'THEN' act 11 'ELSE'
+   'IF' i = 12 'THEN' act 12 'ELSE'
+   'IF' i = 13 'THEN' act 13 'ELSE'
+   'IF' i = 14 'THEN' act 14 'ELSE'
+   'IF' i = 15 'THEN' act 15 'ELSE'
+   'IF' i = 16 'THEN' act 16 'ELSE'
+   'IF' i = 17 'THEN' act 17 'ELSE'
+   'IF' i = 18 'THEN' act 18 'ELSE'
+   'IF' i = 19 'THEN' act 19 'ELSE'
+   'IF' i = 20 'THEN' act 20;
+   ;(i = 1   means do nothing)
+
+   m[getpntr]:= 0;  (Prepare to read from block)
+   'FOR' dummy := 0 'WHILE' getch(m) = true 'DO'  do act(ch)
+'END';
+
+'PROCEDURE' respond to cles;
+'COMMENT'  Chart 11;
+'BEGIN'
+   'INTEGER' dummy;
+   'FOR' dummy := 0 'WHILE' cle count > 0 'DO'
+   'BEGIN'
+      cle count := cle count - 1 ;
+      do actions (m12);  (Respond to Count Limit Event - 20)
+   'END'
+'END';
+
+'INTEGER' 'PROCEDURE' test input ('LOCATION' 'INTEGER' type,
+                              'VALUE' 'INTEGER' wait);
+'COMMENT' Chart 12. This sets octin if data results from the call. The
+parameter type is only affected when the answer is true and a new
+message or NSIDU has arrived. The message appears in in buf, whose
+getpntr is left past the type octet (or in the case of an NSIDU, past
+the length octet). If wait is true then the routine wait for NS input
+is called (rather than input NS) to obtain an NS message.
+Heldin is a control variable denoting the state of the input data
+buffer (in buf): either none when no data is held, or DATA or
+EXPEDITED when the last input message was an NSIDU of data. Heldin
+must initially be set to none ;
+'BEGIN'
+   'PROCEDURE' pass parameter;
+   'BEGIN'
+      getch(in buf);  (Length octet)
+      in buf[getpntr]:= in[buf getpntr]+ ch;
+         ;(Pass the parameter and its length octet)
+   'END';
+   'IF' heldin = none 'THEN'
+   'BEGIN'
+      'IF' wait <> true 'THEN'
+      'BEGIN'
+         'IF' input ns(in buf) = false 'THEN' 'ANSWER' false ; (200)
+      'END'
+      'ELSE'
+         wait for ns input(in buf) ; (201)
+      'COMMENT'  The block in buf has now been filled from input;
+      in buf[putpntr]:= buf size;
+         ;(So that getch can be used, but not beyond the block)
+      in buf[getpntr]:= 0;
+      getch(in buf);  (Type octet.  First 3 bits to be used)
+      type := 1 +['BITS' 3,0]'INTEGER'(ch-1);  (From 1 to 8)
+
+      'COMMENT' The following write statements can be used to display
+      the type of each service primitive received ;
+      trwritestring("TR - test input - type = ");
+      'IF' type = 1 'THEN' trwritestring("Connect");
+      'IF' type = 2 'THEN' trwritestring("Accept");
+      'IF' type = 3 'THEN' trwritestring("Disconnect");
+      'IF' type = 4 'THEN' trwritestring("Data");
+      'IF' type = 5 'THEN' trwritestring("Address");
+      'IF' type = 6 'THEN' trwritestring("Push");
+      'IF' type = 7 'THEN' trwritestring("Expedited");
+      'IF' type = 8 'THEN' trwritestring("Reset");
+      trwriteout;
+      'IF' type = push 'THEN' 'GOTO' set block;
+      pass parameter;  (1st)
+      'IF' type = data 'OR' type = expedited 'THEN' 'GOTO' set block;
+      pass parameter;  (2nd)
+      'IF' type = address 'THEN' 'GOTO' set block;
+      pass parameter;  (3rd)
+      'IF' type = accept 'OR' type = disconnect 'OR' type = reset
+         'THEN' 'GOTO' set block;
+      pass parameter;  (4th:  Type = Connect)
+
+   set block:
+      in buf[putpntr]:= in[buf getpntr];  (Total of octets in block)
+      in buf[getpntr]:= 1;  (Past the type octet)
+
+      'IF' type <> data 'AND' type <> expedited 'THEN' 'ANSWER' true
+      'ELSE'
+      'BEGIN';  (We have a NSIDU)
+         heldin := type;
+         getch(in buf);  (Pass the length octet)
+      'END'
+   'END'; (Now heldin = Data or Expedited)
+
+   getch(in buf);  (Remove one octet from NSIDU)
+   octin := ch;
+      ;(Now heldin and octin together represent a NS primitive data
+       message, and the block in buf holds the rest of the NSIDU)
+   'IF' in buf[getpntr]= in buf[putpntr]
+      'THEN' heldin := none;  (NSIDU exhausted)
+   'ANSWER' true
+'END';
+
+'INTEGER' 'PROCEDURE' drive automatic source;
+'COMMENT'  Chart 13;
+'IF' auto on = true 'AND' auto channel free = true 'THEN'
+'BEGIN'
+   'IF' as oct = as last
+   'THEN'
+   as oct := as first
+   'ELSE'
+   as oct :='BITS'[8,0]'INTEGER'(as oct + as inc);  (Modulo 256)
+
+   octout := as oct;
+   send octet(auto stream, warn);    (21
+                                      auto stream is DATA when
+                                      as stream = 1, or EXPEDITED when
+                                      as stream = 2.  warn is a constant
+                                      of value true indicating that
+                                      warning characters are needed
+                                      before h or w.)
+   'ANSWER' true
+'END'
+'ELSE'
+   'ANSWER' false;
+
+'INTEGER' 'PROCEDURE'
+ count and respond to primitive message;
+'COMMENT'  Chart 14.  Also adjusts context, sets message type, it
+   counts Normal DATA and EXPEDITED messages but does not respond to
+   them, instead it returns true. For all other messages it returns
+   false ;
+'BEGIN'
+   'INTEGER' loc, count;
+   message type := inmt[context, type];
+   context := incon[context, type];   (NB Table look-up gives new
+                                      context 5 for RESET in context 5,
+                                      and gives ADDRESS Normal in
+                                      contexts 3 & 4 - in some cases
+                                      this is not true context or
+                                      message type)
+
+   'IF' message type = 4 'THEN' resets sent := 0;
+                                             ;(Normal Final DISCONNECT)
+
+   'IF' context = 5 'AND' message type = 10 'THEN'
+   'BEGIN';                        (Matching RESET)
+      resets sent := resets sent - 1;
+      'IF' resets sent = 0 'THEN'
+         context := 4;  (Corrects for final matching RESET)
+   'END';
+
+   'IF' last in was data = true 'THEN'
+   'BEGIN'
+      'IF' message type = 6 'THEN'
+      'BEGIN'
+         message type := 15;  (Corrects for ADDRESS following DATA)
+         context := 0;        (Context corrected to $*)
+      'END';
+
+      'IF' message type <> 5 'AND' message type <> 8 'THEN'
+         last in was data := false;
+                                 ;(5 is Normal DATA, 8 Normal EXPEDITED)
+   'END'
+   'ELSE'
+   'IF' message type = 5 'THEN'
+      last in was data := true;
+
+   loc :=  message type + 'LOCATION'(c1) - 1;
+   count :=[ loc]+ 1;
+   [loc]:= count;  (Increment message count)
+   ;(tests for contexts in which data would be POC)
+   'IF' context = 1 'OR' context = 3 'OR' context = 7 'OR' context = 9
+      'OR' context = 10  'THEN'
+         auto channel free := false
+   'ELSE'  auto channel free := true;
+
+   'IF' message type <= 10 'THEN'
+   'BEGIN';  (Normal primitive)
+      c26 := c26 + 1;
+      process cle count(message type);        (22)
+
+      'IF' type <> data 'AND' type <> expedited 'THEN'
+      'BEGIN'
+         respond to incoming message;  (24)
+         'ANSWER' false
+      'END'
+      'ELSE'
+         'ANSWER' true
+   'END'
+   'ELSE' 'IF' message type <= 18 'THEN'
+   'BEGIN';  (Primitive Out of Context)
+      c27 := c27 + 1;
+      process cle count(message type);        (22)
+      respond to poc event;                   (23)
+      'ANSWER' false
+   'END';
+   ;(Now  message type > 18 :  Superfluous primitive)
+   c28 := c28 + 1;
+   process cle count(message type);          (22)
+   'ANSWER' false
+'END';
+
+'COMMENT' Charts 15 and 16 have been incorporated into 3 ;
+
+'INTEGER' 'PROCEDURE'
+ no of octets checks with command type and param count;
+'BEGIN'; 'COMMENT' Chart 17;
+   'COMMENT' octin holds the length of the current parameter;
+
+   'IF' command type > 8 'THEN'
+      'ANSWER' 'IF' octin = 1 'THEN' true 'ELSE' false;
+
+   'IF' command type > 4 'THEN'
+      'ANSWER' 'IF' octin > address size 'THEN' false 'ELSE' true;
+
+   'IF' command type > 2 'THEN'
+   'BEGIN'
+      'IF' param count = 1
+          'THEN' 'BEGIN'
+           'IF' command type = 3
+           'THEN' 'ANSWER' 'IF' octin = cr size 'THEN' true 'ELSE' false
+           'ELSE' 'ANSWER' 'IF' octin > qs size 'THEN' false
+                                                'ELSE' true
+          'END'
+          'ELSE'
+              'ANSWER' 'IF' octin > expl text size 'THEN' false
+                                                   'ELSE' true
+   'END';
+   'ANSWER' true;  (Reset message counts has no parameters and
+                    Change mode is checked via Chart 18)
+'END';
+
+'INTEGER' 'PROCEDURE' mode parameters check;
+'COMMENT'  Chart 18.  Restores block comd for reading again;
+'IF' response parameters check = true
+'AND' cle parameters check = true
+'AND' source parameters check = true
+'THEN' 'ANSWER' true
+'ELSE' 'ANSWER' false;            (25, 26 and 27)
+'COMMENT'  It is important that cle parameters check is not invoked
+when response parameters check gives the answer false, and similarly
+for the third component of the test.  (As defined for Coral 66).
+This is because each leaves the getpntr of comd ready for the next;
+
+'COMMENT'  Chart 19 - has been absorbed in 30 & 108;
+'COMMENT'  Chart 20 - has been absorbed in 11;
+
+'PROCEDURE' send octet ('VALUE' 'INTEGER' stream, warning);
+'COMMENT'  Chart 21;
+'BEGIN'
+   'IF' warning <> true  'OR'  octout <> h 'AND' octout <> w 'THEN'
+   'BEGIN'
+      'COMMENT'  Dummy statement.
+               'CORAL' 66 requires 'AND' to bind tighter than 'OR';
+   'END'
+   'ELSE'
+   'BEGIN'
+      send and count ns message(stream, w);            (Send 'w')
+   'END';
+      send and count ns message(stream, octout);       (29)
+'END';
+
+
+'PROCEDURE' process cle count ('VALUE' 'INTEGER' mt);
+'COMMENT'  Chart 22;
+'BEGIN'
+   'INTEGER' loc;
+   loc := mt + 'LOCATION'(c1) - 1;
+   'IF'  mt = cle id  'AND'  [loc]= cle limit  'THEN'
+   'BEGIN';  (Count limit reached)
+      [loc]:= 0;
+      cle count := cle count + 1
+   'END'
+'END';
+
+'PROCEDURE' respond to poc event;
+'COMMENT'  Chart 23;
+'BEGIN'
+   poc := true;
+   do actions(m14);  (10)
+   poc := false
+'END';
+
+'PROCEDURE' respond to incoming message;
+'COMMENT'  Chart 24;
+'IF' type = connect 'THEN'
+'BEGIN'
+   store param(in buf, iad1);  (Called Address)
+   store param(in buf, iad2);  (Calling Address)
+   store param(in buf, iqs);   (Quality of Service)
+   store param(in buf, iet2);  (Explanatory Text)
+   do actions(m1)
+'END'
+'ELSE' 'IF' type = accept 'THEN'
+'BEGIN'
+   store param(in buf, iad3);  (Recall Address)
+   store param(in buf, iqs);   (Quality of Service)
+   store param(in buf, iet2);  (Explanatory Text)
+   do actions(m2); (10)
+'END'
+'ELSE' 'IF' type = disconnect 'THEN'
+'BEGIN'
+   store param(in buf, icr);   (Coded Reason)
+   store param(in buf, iad4);  (Location)
+   store param(in buf, iet1);  (Explanatory Text)
+   'IF' message type = 4 'THEN'
+   'BEGIN';  (Final DISCONNECT)
+      do actions(m4);  (10)
+      abandon command; (32)
+   'END'
+   'ELSE'
+   do actions(m3);  (Initial DISCONNECT)
+'END'
+'ELSE' 'IF' type = data 'THEN'
+   do actions(m5)
+'ELSE' 'IF' type = address 'THEN'
+'BEGIN'
+   store param(in buf, adrin);  (Address part)
+   getch(in buf);  (Pass the length octet of qualifier)
+   getch(in buf);  qualifier := ch;
+   do actions(m6)
+'END'
+'ELSE' 'IF' type = push 'THEN'
+   do actions(m7)
+'ELSE' 'IF' type = expedited 'THEN'
+   do actions(m8)
+'ELSE'
+'BEGIN';  (Message is RESET)
+   store param(in buf, icr);   (Coded Reason)
+   store param(in buf, iad4);  (Location)
+   store param(in buf, iet1);  (Explanatory Text)
+   'IF' message type = 10 'THEN'
+   'BEGIN';  (Matching RESET)
+      do actions(m10);
+      abandon command
+   'END'
+   'ELSE'
+   do actions(m9);  (Initial RESET)
+'END';
+
+
+'INTEGER' 'PROCEDURE' response parameters check;
+'COMMENT'  Chart 25.        (Parameters 1 to 14);
+'BEGIN'
+   'INTEGER' count, n;
+   'FOR' count := 1 'STEP' 1 'UNTIL' 14 'DO'
+   'BEGIN'
+      getch(comd);  n := ch;  (Length of response parameter)
+      'IF' n<1 'OR' n>response size 'THEN' 'ANSWER' false;
+                                 ;(Response wrong length)
+      'FOR' n := n-1 'WHILE' n>=0 'DO'
+      'BEGIN'
+         getch(comd);
+         'IF' ch = 0 'OR' ch > 20 'THEN' 'ANSWER' false;
+      'END';           (Erroneous primitive action)
+   'END';
+   'ANSWER' true
+'END';
+
+
+'INTEGER' 'PROCEDURE' cle parameters check;
+'COMMENT'  Chart 26.            (Parameters 15 and 16);
+'BEGIN'
+   getch(comd);  (Get the length octet)
+   'IF' ch <> 1 'THEN' 'ANSWER' false; (Parameter 15 not a single octet)
+   getch(comd);  (Cle_id)
+   'IF' ch > 56 'THEN' 'ANSWER' false;  (Count limit identifier wrong)
+   getch(comd);  (Length octet);
+   'IF' ch <> 2 'THEN' 'ANSWER' false;
+                         ;(Parameter 16, Count Limit, not 16 bits)
+   'ANSWER' true
+'END';
+
+
+'INTEGER' 'PROCEDURE' source parameters check;
+'COMMENT'  Chart 27.            (Parameters 17 to 24);
+'BEGIN'
+   'INTEGER' count;
+   getch(comd);  getch(comd);  getch(comd);
+      ;(Pass by Cle_limit to length octet of As_stream)
+   'IF' ch <> 1 'THEN' 'ANSWER' false;  (Parameter 17 not single octet)
+   getch(comd);  (As_stream)
+   'IF' ch <> 0 'AND' ch <> 1 'AND' ch <> 2
+   'THEN' 'ANSWER' false;  (As_stream number wrong)
+   'FOR' count := 18 'STEP' 1 'UNTIL' 23 'DO'
+   'BEGIN'
+      getch(comd);                   (Length octet)
+      'IF' ch <> 1 'THEN' 'ANSWER' false;
+                                   ;(Parameter value not a single octet)
+      getch(comd);                   (Pass over parameter)
+   'END';
+   getch(comd);
+   'IF' ch <> 2 'THEN' 'ANSWER' false;
+                                      ;(Parameter 24 should be 2 octets)
+   comd[getpntr]:= 0;  (Prepare to read block comd again)
+   'ANSWER' true
+'END';
+
+'PROCEDURE' send parameter;
+'COMMENT' Chart 28.  Assumes that the getpntr of reply points to
+the parameter.  Leaves this past the parameter;
+'BEGIN'
+   'INTEGER' count;
+   getch(reply);  count := ch;  (Parameter length)
+   octout := count;
+   send octet(reply stream, no warn);        (21)
+
+   'FOR' count := count - 1 'WHILE' count >= 0 'DO'
+   'BEGIN'
+      getch(reply);  octout := ch;
+      send octet(reply stream, no warn)
+   'END'
+'END';
+
+'PROCEDURE' send and count ns message ('VALUE' 'INTEGER' mt, datum);
+'COMMENT' Chart 29.  If mt is data or expedited then octout is
+   given in datum.  Otherwise the message is given in out buf;
+'BEGIN'
+   'INTEGER' loc, count;
+   message type := outmt[context, mt];   (This statement must come
+                                         first, since
+                                         send and buffer ns message
+                                         uses 'new' message type but
+                                         'old' context)
+   send and buffer ns message(mt, datum, message type, context); (33)
+   context := outcon[context, mt];      (NB Table look-up gives ADDRESS
+                                         Normal in contexts 2, 4 and 5,
+                                         even though in some cases this
+                                         is not the true context or
+                                         message type.)
+   'IF' message type = 32 'THEN'
+   'BEGIN';                    (Normal Final DISCONNECT)
+      resets sent := 0;           (Gives i for $|R(i))
+   'END';
+   'IF' mt = reset 'AND' context = 5 'THEN'
+        resets sent := resets sent + 1;
+                                                     ;($|R(i),  i:=i+1 )
+   'IF' last out was data = true 'THEN'
+   'BEGIN'
+      'IF' message type = 34 'THEN'
+      'BEGIN'
+         message type := 41;  (Corrects for ADDRESS following DATA)
+         context := 0;        (Corrected to $*)
+      'END';
+
+      'IF' message type <> 33 'AND' message type <> 36 'THEN'
+         last out was data := false;    (Neither DATA nor EXPEDITED)
+   'END'
+   'ELSE' 'IF' message type = 33 'THEN'
+         last out was data := true;
+
+   'IF' context = 1 'OR' context = 3 'OR' context = 7 'OR' context = 9
+      'OR' context = 10 'THEN'
+         auto channel free := false
+   'ELSE'  auto channel free := true;
+
+   'IF' message type = 32 'OR' message type = 38 'THEN'
+      abandon command;  (Final DISCONNECT or Matching RESET -(32))
+
+   loc := message type + 'LOCATION'(c1) - 1;
+   count :=[ loc]+ 1;
+   [loc]:= count;  (Increment message count)
+
+   'IF'      message type <= 38 'THEN'  c54 := c54 + 1
+   'ELSE' 'IF' message type <= 46 'THEN'  c55 := c55 + 1
+   'ELSE'                             c56 := c56 + 1;
+                      ;(Normal primitive, primitive out of context
+                       or superfluous primitive respectively.)
+
+   process cle count(message type);    (22)
+'END';
+
+'PROCEDURE'
+ send reply ('VALUE' 'INTEGER' isadr, reply type, reply length);
+'COMMENT' Chart 30.  Param_list occupies the block reply;
+'BEGIN'
+   'INTEGER' param count;
+   'PROCEDURE' send ('VALUE' 'INTEGER' x);
+   'BEGIN'
+      octout := x;
+      send octet(reply stream, no warn)
+   'END';
+   send(h);  (Herald 'H')
+   send(reply type);
+   send(reply length);   (No. of parameters)
+
+   reply[getpntr]:= 0;
+                  ;(Prepare to read the first parameter from reply)
+   param count := reply length;
+   'FOR' param count := param count - 1 'WHILE' param count >= 0 'DO'
+      send parameter;  (28)
+
+   'IF' isadr = true 'THEN'
+   'BEGIN';  (Address parameter)
+      out buf[putpntr]:= 0;
+      ch := push;  putch(out buf);
+      send and count ns message(push, none);        (29)
+      reply[getpntr]:=[reply getpntr]-1;
+         ;(Prepare to read last octet of reply again)
+      getch(reply);  (Fetch qualifier to ch)
+      'IF' ch = 0 'THEN' ch := 1 'ELSE'
+      'IF' ch = 1 'THEN' ch := 0;  (Reverse qualifier - 'Chart 19')
+
+      reply[putpntr]:=[reply getpntr]- 1;
+         ;(Prepare to write last octet of reply again)
+      putch(reply);  (Reversed qualifier in reply)
+      out buf[putpntr]:= 0;  ch := address;  putch(out buf);
+                                               ;(Type octet)
+      copy(reply, out buf);  (Append address and qualifier)
+      send and count ns message(address, none);            (29)
+   'END';
+
+   send(t);  (Trailer 'T')
+
+   'IF' isadr = true 'OR' reply stream = data 'THEN'
+   'BEGIN'
+      out buf[putpntr]:= 0;
+      ch := push;  putch(out buf);
+      send and count ns message(push, none);        (29)
+   'END'
+   'ELSE'  send and buffer ns message(forward buffered output, none,
+                                      message type, context) ;  (33)
+'END';
+
+
+'COMMENT'  Chart 31 - has been absorbed in chart 33;
+
+'PROCEDURE' abandon command;
+'COMMENT' Chart 32;
+'BEGIN'
+   d command := false;
+   e command := false;
+   d suspense := false;
+   e suspense := false;
+   abandon := true
+'END';
+
+'PROCEDURE' send and buffer ns message ('VALUE' 'INTEGER' mt, datum,
+                                        message type, context) ;
+'COMMENT'  Chart 33.  The message is given in the block out buf
+ unless DATA or EXPEDITED, in which case the octet of data is in datum;
+'BEGIN'
+   'INTEGER' matching, nsidu size;
+
+   'PROCEDURE' send nsidu;
+   'COMMENT'  Also clears heldout and resets nsidu out;
+   'BEGIN'
+      'INTEGER' pp;
+      pp := nsidu[out putpntr];  (Number of octets stored)
+      nsidu out[putpntr]:= 0;
+      ch := heldout;  (data or expedited)
+      putch(nsidu out);  (Type octet)
+      ch := pp - 2;
+      putch(nsidu out);  (Length octet)
+      output ns(nsidu out, false);  (Send the NSIDU.  Since this is, by
+                                     definition, either DATA or
+                                     EXPEDITED the second argument
+                                     ;(Matching) must be False.)
+      'COMMENT'  The putpntr of nsidu out is now 2;
+      heldout := none
+   'END';
+
+   matching := false;          (Will be set to true only for a Final
+                                DISCONNECT or a Matching RESET)
+   'IF' mt = forward buffered output 'THEN'
+   'BEGIN';                              (This is 'Chart 31')
+      'IF' heldout <> none 'THEN' send nsidu;
+      'GOTO' return;
+   'END';
+
+   'IF' heldout <> none 'THEN'
+   'BEGIN'
+      'IF' mt <> heldout 'THEN' send nsidu
+      'ELSE' 'GOTO' store octet
+   'END';
+
+   'IF' mt <> data 'AND' mt <> expedited 'THEN'
+   'BEGIN'
+      'IF' message type = 32 'AND' context <> 3 'OR' message type = 38
+         'THEN' matching := true;     (Final DISCONNECT not replying to
+                                          CONNECT, or a Matching RESET)
+      output ns(out buf, matching);  (Send NS message)
+      'GOTO' return
+   'END'
+   'ELSE'
+   'BEGIN';  (Start a new NSIDU)
+      heldout := mt;
+      nsidu out[putpntr]:= 2 ;
+      'IF' mt = data
+        'THEN' nsidu size := data size
+        'ELSE' nsidu size := expedited size;(set max size of this NSIDU)
+   'END';
+
+store octet:
+   ch := datum;
+   putch(nsidu out);
+   'IF' nsidu out[putpntr]= nsidu size
+      'THEN'  send nsidu;
+return:
+'END';
+
+'PROCEDURE' act 2;
+'COMMENT'  Chart 102:  Primitive Action 2:  Send a CONNECT message
+   using Outgoing Called address;
+send connect(oad1);
+
+'PROCEDURE' act 3;
+'COMMENT'  Chart 103:  Primitive Action 3:  Send a CONNECT message
+   using Incoming Calling address;
+send connect(iad2);
+
+'PROCEDURE' act 4;
+'COMMENT'  Chart 104:  Primitive Action 4:  Send a CONNECT message
+   using Incoming Recall address;
+send connect(iad3);
+
+'PROCEDURE' act 5;
+'COMMENT'  Chart 105:  Primitive Action 5:  Send an ACCEPT message;
+'BEGIN'
+   out buf[putpntr]:= 0;
+   ch := accept;  putch(out buf);  (Type octet)
+   fetch param(oad3, out buf);
+   fetch param(oqs, out buf);
+   fetch param(oet4, out buf);
+   send and count ns message(accept, none);  (29)
+'END';
+
+'PROCEDURE' act 6;
+'COMMENT'  Chart 106:  Primitive Action 6:  Send a DISCONNECT message;
+'BEGIN'
+   out buf[putpntr]:= 0;
+   ch := disconnect;  putch(out buf);  (Type octet)
+   'IF' invalid = true 'THEN'
+   'BEGIN';  (Responding to Invalid Command event)
+      fetch param(ocr2, out buf);
+      fetch param(oad4, out buf);
+      fetch param(oet2, out buf);
+      send and count ns message(disconnect, none);  (29)
+   'END'
+   'ELSE'
+   'IF' poc = false 'THEN'
+   'BEGIN';  (Normal case)
+      fetch param(ocr1, out buf);
+      fetch param(oad4, out buf);
+      fetch param(oet1, out buf);
+      send and count ns message(disconnect, none);  (29)
+   'END'
+   'ELSE'
+   'IF' context <> 1 'AND' context <> 7 'AND' context <> 9 'THEN'
+   'BEGIN';  (Responding to POC)
+      fetch param(ocr3, out buf);
+      fetch param(oad4, out buf);
+      fetch param(oet3, out buf);
+      send and count ns message(disconnect, none)
+   'END';  (Otherwise do nothing - DISCONNECT would be a POC)
+'END';
+
+'PROCEDURE' act 7;
+'COMMENT'  Chart 107:  Primitive Action 7:  Echo a received octet
+   as a DATA message;
+'BEGIN'
+   octout := octin;
+   send octet(data, warn);        (21)
+'END';
+
+
+'PROCEDURE' act 8;
+'COMMENT'  Chart 108:  Primitive Action 8:  Echo a received address
+   with reversed qualifier;
+'BEGIN'
+   out buf[putpntr]:= 0;
+   ch := address;  putch(out buf);  (Type octet)
+   fetch param(adrin, out buf);
+   ch := 1;  putch(out buf);  (Length octet)
+
+   ch := qualifier;
+   'IF' ch = 0 'THEN' ch := 1 'ELSE'
+   'IF' ch = 1 'THEN' ch := 0;  (Reverse Qualifier - 'Chart 19')
+   putch(out buf);
+   send and count ns message(address, none);  (29)
+'END';
+
+
+'PROCEDURE' act 9;
+'COMMENT'  Chart 109:  Primitive Action 9:  Send a PUSH message;
+'BEGIN'
+   out buf[putpntr]:= 0;
+   ch := push;  putch(out buf);  (Type octet)
+   send and count ns message(push, none);  (29)
+'END';
+
+
+'PROCEDURE' act 10;
+'COMMENT'  Chart 110:  Primitive Action 10:  Echo a received octet
+   as an EXPEDITED  message;
+'BEGIN'
+   octout := octin;
+   send octet(expedited, warn);  (21)
+'END';
+
+'PROCEDURE' act 11;
+'COMMENT'  Chart 111:  Primitive Action 11:  Send a RESET message;
+'BEGIN'
+   out buf[putpntr]:= 0;
+   ch := reset;  putch(out buf);  (Type octet)
+   'IF' invalid = true 'THEN'
+   'BEGIN';  (Responding to Invalid Command event)
+      fetch param(ocr2, out buf);
+      fetch param(oad4, out buf);
+      fetch param(oet2, out buf);
+      send and count ns message(reset, none); (29)
+   'END'
+   'ELSE'
+   'IF' poc = true 'THEN'
+   'BEGIN'
+      'IF' context <> 1 'AND' context <> 2 'AND' context <> 3 'AND'
+           context <> 7 'AND' context <> 9 'AND' context <> 10 'THEN'
+      'BEGIN' ;( Responding to Primitive Out of Context )
+          fetch param(ocr3, out buf);
+          fetch param(oad4, out buf);
+          fetch param(oet3, out buf);
+          send and count ns message(reset, none)
+      'END' ;( otherwise do nothing - RESET would be a POC)
+   'END'
+   'ELSE'
+   'BEGIN';  (Normal case)
+      fetch param(ocr1, out buf);
+      fetch param(oad4, out buf);
+      fetch param(oet1, out buf);
+      send and count ns message(reset, none)
+   'END';
+'END';
+
+
+'PROCEDURE' act 12;
+'COMMENT'  Chart 112:  Primitive Action 12:  Start Automatic Source;
+'IF' as stream <> 0 'AND' auto on = false 'THEN'
+'BEGIN'
+   auto on := true;
+   drive automatic source;  (13.  Sends an octet now, in case
+                            the next Action stops the source)
+'END';
+
+
+'PROCEDURE' act 13;
+'COMMENT'  Chart 113:  Primitive Action 13:  Stop Automatic Source;
+'IF' auto on = true 'OR' as stream <> 0 'THEN'
+'BEGIN';
+   auto on := false;   (whether or not it is already false)
+   reply stream := auto stream;        (DATA      when as stream = 1,
+                                        EXPEDITED when as stream = 2)
+   reply[putpntr]:= 0;
+   ch := 1;  putch(reply);
+   ch := as oct;  putch(reply);
+   send reply(not addr, 19, 1);  (30)
+'END';
+
+'PROCEDURE' act 14;
+'COMMENT'  Chart 114:  Primitive Action 14:  Send a burst from
+   Single-shot Source;
+'IF' ss burst > 0 'THEN'
+'BEGIN'
+   'INTEGER' burst count;
+   burst count := ss burst;
+   'FOR' burst count := burst count - 1 'WHILE' burst count >=0 'DO'
+   'BEGIN'
+      'IF' ss oct = ss last 'THEN'
+         ss oct := ss first 'ELSE'
+         ss oct :='BITS'[8,0]'INTEGER'(ss oct + ss inc);  (Modulo 256)
+      octout := ss oct;
+      send octet(ss stream, warn);  (21)
+                             ;(ss stream = EXPEDITED when as stream = 1,
+                              ss stream = DATA      when as stream = 2)
+   'END'
+'END';
+
+'PROCEDURE'  act 15;
+'BEGIN'
+   'COMMENT' Generate a parallel Test Responder.
+     Create a new instance of the Test Responder, set it to the
+     "Outgoing CONNECT" version of the default mode, and run it in
+     parallel with this Test Responder. (How this is done will depend on
+     the capabilities of the operating system environment.);
+'END';
+
+'PROCEDURE' act 16;
+'COMMENT'
+  Chart 116:  Primitive Action 16:  Store Outgoing Called address;
+copy(adrin, oad1);
+
+'PROCEDURE' act 17;
+'COMMENT'
+  Chart 117:  Primitive Action 17:  Store Outgoing Calling address;
+copy(adrin, oad2);
+
+'PROCEDURE' act 18;
+'COMMENT'
+  Chart 118:  Primitive Action 18:  Store Outgoing Recall address;
+copy(adrin, oad3);
+
+'PROCEDURE' act 19;
+'COMMENT'
+  Chart 119:  Primitive Action 19:  Store Outgoing Location;
+copy(adrin, oad4);
+
+'PROCEDURE'  act 20;
+'BEGIN'
+   'COMMENT'  Chart 120:  Primitive Action 20:  End Test Session.
+     STOP -- Terminate this Test Responder. If this is done by putting
+     the Test Responder back into the 'CONNECT in' default mode, care
+     must be taken to fully reinitialise all variables and blocks.   ;
+'END';
+
+'INTEGER' 'PROCEDURE' input ns ('INTEGER' 'ARRAY' in);
+   'COMMENT' Chart 200 by another name.
+             Input primitive or NSIDU.
+    This procedure must deliver answer 0 (false) if there is no
+    primitive or NSIDU waiting to be read from the Network Service
+    Interface at the time the procedure is called, but otherwise answer
+    1 (true). If the answer is false, the array parameter (in) must be
+    unaltered. If the answer is true, the actual parameter array must be
+    filled (two octets per word, beginning with the word of index 3)
+    from the message waiting to be read, and that message must be
+    discarded.
+
+    The first octet of each message must be from 1 to 8, giving the type
+    of primitive. The type is extracted from the lowest three bits,
+    ignoring higher bits, so that an erroneous type will probably
+    produce unexpected behaviour. When this is detected some evidence
+    should will be available for diagnosis. This is preferred to
+    aborting the Test Responder.
+
+    This type octet is followed by from 0 to 4 parameters. All
+    parameters specified in the Yellow Book must be present in the
+    defined order, even if null. Each must be preceded by a length
+    octet, giving a maximum possible length of 255 octets. Null
+    parameters are represented by a zero length octet. Data and
+    expedited messages are passed as a single parameter proceded by a
+    length octet. Addresses should not be longer than 'address size'.
+    Explanatory text parameters should not be longer than 'expl text
+    size'. Coded reasons should not be longer than 'cr size'. Qualifiers
+    must be just one octet long, but still must be preceded by a length
+    octet (value 1). Data messages should not be longer than
+    'data_size' - 2, and expedited messages should not be longer than
+    'expedited_size' - 2.
+
+    If a length octet causes the capacity of the block 'in buf' to be
+    exceeded, the parameter will be truncated when stored, and will
+    subsequently be read as if extended by copies of the last octet
+    stored there. This can only happen if 'buf size' is set too small in
+    relation to other 'sizes'.
+
+    Form of data 'in buf'
+
+    Word 0                     Block size    )
+    Word 1                     Get pointer   ) Ignored by 'input ns'
+    Word 2                     Put pointer   )
+    Word 3  Octet 0            Type of message
+            Octet 1            Length of 1st parameter
+    Word 4  Octet 2          )
+     ...     ...             ) Octets (if any) of 1st parameter
+            Octet 1 + length )
+            next Octet         Length of 2nd parameter (if any)
+     ...     ...                ...
+    ;
+'ANSWER' true + false;
+
+'PROCEDURE' wait for ns input ('INTEGER' 'ARRAY' in);
+'BEGIN'
+   'COMMENT' Chart 201 by another name.
+             Input primitive or NSIDU.
+    This procedure is similar to input ns (200) above, except that the
+    TR is prepared to wait for the arrival of a primitive message if
+    there is none available at the moment the procedure is called. If
+    the waiting has to be abandoned for any reason, the TR should be
+    terminated ;
+'END' ;
+
+'PROCEDURE'
+ output ns ('INTEGER' 'ARRAY' out; 'VALUE' 'INTEGER' matching);
+'BEGIN'
+   'COMMENT' Chart 202 and 206 combined.
+             Output primitive or NSIDU.
+    This procedure outputs the message defined in the parameter array.
+    This array will be filled in the same format as required for input.
+    The procedure should not return until the output interaction
+    requested is complete. Thus, if the output channel is blocked by
+    flow-control, the TR must wait until output can proceed. If an
+    acknowledgement is required from the Network Service, this must be
+    waited for, even if this means that input must be buffered until the
+    next call of (200) or (201). If the input buffer overflows, a RESET
+    or DISCONNECT should be generated within output ns both towards the
+    portable part of the TR and towards the IUT, with a suggested 'coded
+    reason' of 37 (Congestion), to allow resynchronisation of the test.
+    Output ns has a second argument which is set to 1  (true) for a
+    Matching RESET or a Final DISCONNECT, which is not in response to a
+    CONNECT: such messages may be discarded if they are not required by
+    the IUT. This will be the case if the IUT provides an "end system"
+    style of service as defined in the Yellow Book state tables.
+    Otherwise the second parameter is 0 (false).
+
+    Form of data 'out buf'
+
+    Word 0                   Block size    )
+    Word 1                   Get pointer   ) Ignored by 'output ns'
+    Word 2                   Put pointer   )
+    Word 3  Octet 0          Type of message
+            Octet 1          Length of 1st parameter
+    Word 4  Octet 2         )
+     ...     ...            )Octets (if any) of 1st parameter
+            Octet 1 + length)
+            next Octet       Length of 2nd parameter (if any)
+     ...     ...              ...
+    Form of data in 'nsidu out'
+
+    Word 0                   Block Size     )
+    Word 1                   Get pointer    ) Ignored by 'output ns'
+    Word 2                   Put pointer    )
+    Word 3  Octet 0          Type of message(4 for DATA,7 for EXPEDITED)
+            Octet 1          Length of the parameter
+    Word 4  Octet 2         )
+     ...     ...            )Data Octets
+            Octet 1 + length)    ;
+'END';
+
+'PROCEDURE'
+ supply initial values ('INTEGER' 'ARRAY' called addr, calling addr,
+                                 'LOCATION' 'INTEGER' connect mode);
+'BEGIN'
+  'COMMENT' Chart 203
+    This procedure obtains, in whatever manner is convenient, values
+    for, the Called and Calling Addresses and whether the Test Responder
+    is to wait for the Initial CONNECT (connect mode is  1 (true)) or
+    send it (connect mode is 0 (false)). These values may be set by
+    program, obtained from file, or by interaction with a human
+    operator. They must be presented in block form: ie. the first 16 bit
+    word must contain the value of address size, the second zero, and
+    the third the length of the actual address, thereafter octets of the
+    address must be packed two to each 16 - bit word. ;
+'END';
+
+
+'COMMENT' Chart 204 has been absorbed in the main program below.
+          Chart 205 has been absorbed in chart 30.
+          Chart 206 has been combined with chart 202 ;
+
+'COMMENT'  Here begin the statements of the Test Responder, i.e.
+           the body of the "Main_loop";
+'BEGIN'
+   'PROCEDURE' syntax error;
+   'BEGIN'
+      respond to invalid command event;  (8)
+      'GOTO' again
+   'END';
+
+   initialise control variables; (1)
+   set default mode;             (2)
+   respond to change mode event; (4)
+again:
+   'IF' read command octet = false 'THEN' 'GOTO' again;  (3)
+   'COMMENT' A command octet has now been read to octin);
+
+   command type := octin;
+   'IF' command type < 1 'OR' command type > 19 'THEN'
+      syntax error;  (Command type out of range)
+
+   'IF' read command octet = false 'THEN' 'GOTO' again;    (3)
+   param count := octin;
+   'IF' param count checks with command type = false
+      'THEN' syntax error;
+         ;(param count checks with command type is (5))
+
+   comd[putpntr]:= 0;  (Chart 204 has been incorporated into Main)
+                        ;(Prepare to write command to block comd)
+   'FOR' param count := param count - 1 'WHILE'  param count >= 0 'DO'
+      'IF' read parameter = false 'THEN' 'GOTO' again;
+        ;(read parameter is (6))
+    'COMMENT' Now all parameters have been stored in comd;
+
+   'IF' read command octet = false 'THEN' 'GOTO' again;    (3)
+
+   d command := false;                (End of command)
+   e command := false;
+
+   'IF' octin <> t 'THEN' syntax error;
+              ;(Trailer)
+
+   comd[getpntr]:= 0;  (Prepare to read the command)
+   respond to command;  (7)
+   'GOTO' again
+'END'
+'END' OF SEGMENT c1
+'FINISH'
+
+
+
+
+

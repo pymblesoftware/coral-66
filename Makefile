@@ -5,7 +5,7 @@
 
 
 coral: main.c lex.yy.c keywords.cc code-gen.c
-	cc -o coral main.c keywords.cc  code-gen.c lex.yy.c -ll
+	cc -g -o coral main.c keywords.cc  code-gen.c lex.yy.c -ll
 
 
 lex.yy.c:
